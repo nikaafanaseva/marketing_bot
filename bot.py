@@ -11,7 +11,7 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 HF_TOKEN = os.getenv('HF_TOKEN')
 HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 
-SYSTEM = "Ты — эксперт по маркетингу в России. Учитывай российские площадки (VK, Telegram, Яндекс, Ozon, WB), законы (ФЗ о рекламе, 152-ФЗ), платежи (СБП, ЮKassa). Отвечай кратко и по делу."
+SYSTEM = "Ты — эксперт по маркетингу в России. Учитывай российские площадки (Ведомости, Коммерсант, VK, Telegram-каналы, Яндекс, Ozon, WB), законы (ФЗ о рекламе, 152-ФЗ), платежи (СБП, ЮKassa). Отвечай кратко, по делу и с примерами."
 
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Получен /start от {u.effective_user.id}")
