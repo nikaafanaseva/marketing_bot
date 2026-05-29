@@ -12,29 +12,58 @@ HF_TOKEN = os.getenv('HF_TOKEN')
 HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 
 hf_client = InferenceClient(token=HF_TOKEN)
-SYSTEM = "Ты — эксперт по маркетингу в России. Учитывай российские площадки, законы и платежи. Отвечай кратко."
+
+SYSTEM = "Ты — эксперт по маркетингу в России. Учитывай российские площадки (VK, Telegram, Яндекс, Ozon, WB), законы (ФЗ о рекламе, 152-ФЗ), платежи (СБП, ЮKassa). Отвечай кратко и по делу."
 
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"📩 Получен /start от {u.effective_user.id}")
     await u.message.reply_text("👋 Привет! Спрашивай про маркетинг в РФ.")
+    logger.info("✅ Ответ на /start отправлен")
 
 async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.chat.send_action("typing")
+    user_id = u.effective_user.id
+    text = u.message.text
+    logger.info(f"📩 Получено от {user_id}: '{text}'")
+    
     try:
-        resp = await asyncio.to_thread(
-            hf_client.chat,
-            messages=[{"role":"system","content":SYSTEM},{"role":"user","content":u.message.text}],
-            model=HF_MODEL, max_tokens=512, timeout=25
+        await u.message.chat.send_action("typing")
+        logger.info("📝 Отправлено действие 'typing'")
+        
+        # ✅ ПРАВИЛЬНЫЙ ВЫЗОВ HF API
+        response = await asyncio.to_thread(
+            hf_client.chat_completion,
+            messages=[
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": text}
+            ],
+            model=HF_MODEL,
+            max_tokens=512,
+            temperature=0.7,
+            timeout=25
         )
-        await u.message.reply_text(resp.choices[0].message.content)
+        
+        reply = response.choices[0].message.content
+        await u.message.reply_text(reply)
+        logger.info("✅ Ответ отправлен")
+        
     except Exception as e:
-        logger.error(f"Error: {e}")
-        await u.message.reply_text("⚠️ Ошибка. Попробуйте позже.")
+        logger.error(f"❌ Ошибка: {type(e).__name__}: {e}")
+        await u.message.reply_text("⚠️ Ошибка при обработке. Попробуйте позже.")
 
 def main():
+    logger.info("⚙️ Создаю приложение...")
     app = Application.builder().token(TG_TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
-    app.run_webhook(listen="0.0.0.0", port=int(os.getenv("PORT",8000)), url_path="webhook", webhook_url=f"{WEBHOOK_URL}/webhook")
+    
+    logger.info(f"🔗 Запускаю webhook: {WEBHOOK_URL}/webhook")
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.getenv("PORT", 8000)),
+        url_path="webhook",
+        webhook_url=f"{WEBHOOK_URL}/webhook"
+    )
 
 if __name__ == "__main__":
     main()
