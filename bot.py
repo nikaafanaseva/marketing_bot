@@ -11,8 +11,6 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 HF_TOKEN = os.getenv('HF_TOKEN')
 HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 
-hf_client = InferenceClient(token=HF_TOKEN)
-
 SYSTEM = "Ты — эксперт по маркетингу в России. Учитывай российские площадки (VK, Telegram, Яндекс, Ozon, WB), законы (ФЗ о рекламе, 152-ФЗ), платежи (СБП, ЮKassa). Отвечай кратко и по делу."
 
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -29,9 +27,11 @@ async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.chat.send_action("typing")
         logger.info("📝 Отправлено действие 'typing'")
         
-        # ✅ Вызов без timeout
+        # Создаём клиент заново для каждого запроса (обход проблем с соединением)
+        client = InferenceClient(token=HF_TOKEN)
+        
         response = await asyncio.to_thread(
-            hf_client.chat_completion,
+            client.chat_completion,
             messages=[
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": text}
@@ -46,8 +46,14 @@ async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
         logger.info("✅ Ответ отправлен")
         
     except Exception as e:
-        logger.error(f"❌ Ошибка: {type(e).__name__}: {e}")
-        await u.message.reply_text("⚠️ Ошибка при обработке. Попробуйте позже.")
+        error_msg = f"{type(e).__name__}: {str(e)[:200]}"
+        logger.error(f"❌ Ошибка: {error_msg}")
+        
+        # Более подробное сообщение об ошибке
+        if "ConnectionError" in str(type(e).__name__) or "resolve" in str(e).lower():
+            await u.message.reply_text("⚠️ Проблема с соединением. Попробуйте через 1-2 минуты.")
+        else:
+            await u.message.reply_text("⚠️ Ошибка при обработке. Попробуйте позже.")
 
 def main():
     logger.info("⚙️ Создаю приложение...")
