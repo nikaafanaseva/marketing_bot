@@ -1,3 +1,10 @@
+# === ОТЛАДКА: простые принты, которые точно появятся в логе ===
+print("🚀 bot.py STARTED")
+print(f"🔍 TG_TOKEN: {'✅' if __import__('os').environ.get('TG_BOT_TOKEN') else '❌ MISSING'}")
+print(f"🔍 HF_TOKEN: {'✅' if __import__('os').environ.get('HF_TOKEN') else '❌ MISSING'}")
+print(f"🔍 WEBHOOK_URL: {'✅' if __import__('os').environ.get('WEBHOOK_URL') else '❌ MISSING'}")
+# =============================================================
+
 import os
 import logging
 import asyncio
@@ -5,9 +12,11 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from huggingface_hub import InferenceClient
 
+# Настройка логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    level=logging.INFO,
+    force=True  # гарантируем, что логи пойдут в консоль
 )
 logger = logging.getLogger(__name__)
 
@@ -31,8 +40,7 @@ SYSTEM_PROMPT = (
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет! Я бот-эксперт по маркетингу в РФ.\n"
-        "Спрашивай о трендах, рекламе, маркетплейсах или законах. "
-        "Отвечу с учётом российской специфики."
+        "Спрашивай о трендах, рекламе, маркетплейсах или законах."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -55,40 +63,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         bot_reply = response.choices[0].message.content
         await update.message.reply_text(bot_reply)
-        
     except Exception as e:
         logger.error(f"Error: {e}")
-        if "Model is currently loading" in str(e) or "503" in str(e):
-            await update.message.reply_text("⏳ Модель просыпается (бесплатный тариф). Попробуйте повторить запрос через 40-60 секунд.")
-        else:
-            await update.message.reply_text("⚠️ Ошибка соединения. Попробуйте позже.")
+        await update.message.reply_text("⚠️ Ошибка. Попробуйте позже.")
 
 def main():
-    # Проверка переменных
-    if not TG_TOKEN:
-        logger.error("❌ Не задан TG_BOT_TOKEN")
-        raise ValueError("Missing TG_BOT_TOKEN")
-    if not WEBHOOK_URL:
-        logger.error("❌ Не задан WEBHOOK_URL")
-        raise ValueError("Missing WEBHOOK_URL")
-    if not HF_TOKEN:
-        logger.error("❌ Не задан HF_TOKEN")
-        raise ValueError("Missing HF_TOKEN")
-    
-    logger.info("✅ Все переменные настроены, запускаем бота...")
-    
-    # Создаём приложение (совместимо с v21.6+)
-    app = Application.builder().token(TG_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    try:
+        print("✅ ПЕРЕД созданием Application")
+        app = Application.builder().token(TG_TOKEN).build()
+        print("✅ ПОСЛЕ создания Application")
+        
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запуск webhook для Render
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.getenv("PORT", 8000)),
-        url_path="webhook",
-        webhook_url=f"{WEBHOOK_URL}/webhook"
-    )
+        print(f"🔗 Запуск webhook на порту {os.getenv('PORT', 8000)}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=int(os.getenv("PORT", 8000)),
+            url_path="webhook",
+            webhook_url=f"{WEBHOOK_URL}/webhook"
+        )
+    except Exception as e:
+        print(f"💥 КРИТИЧЕСКАЯ ОШИБКА в main(): {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 if __name__ == "__main__":
+    print("🎯 Вход в __main__")
     main()
