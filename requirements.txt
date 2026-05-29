@@ -1,2 +1,2 @@
-python-telegram-bot>=21.6
+python-telegram-bot>=21.0,<22.0
 huggingface_hub==0.24.0
