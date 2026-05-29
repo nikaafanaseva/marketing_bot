@@ -29,7 +29,7 @@ async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.chat.send_action("typing")
         logger.info("📝 Отправлено действие 'typing'")
         
-        # ✅ ПРАВИЛЬНЫЙ ВЫЗОВ HF API
+        # ✅ Вызов без timeout
         response = await asyncio.to_thread(
             hf_client.chat_completion,
             messages=[
@@ -38,8 +38,7 @@ async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
             ],
             model=HF_MODEL,
             max_tokens=512,
-            temperature=0.7,
-            timeout=25
+            temperature=0.7
         )
         
         reply = response.choices[0].message.content
