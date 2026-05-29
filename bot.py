@@ -64,13 +64,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Ошибка соединения. Попробуйте позже.")
 
 def main():
-    if not all([TG_TOKEN, WEBHOOK_URL, HF_TOKEN]):
-        raise ValueError("Проверьте переменные окружения!")
-
+    # Проверка переменных
+    if not TG_TOKEN:
+        logger.error("❌ Не задан TG_BOT_TOKEN")
+        raise ValueError("Missing TG_BOT_TOKEN")
+    if not WEBHOOK_URL:
+        logger.error("❌ Не задан WEBHOOK_URL")
+        raise ValueError("Missing WEBHOOK_URL")
+    if not HF_TOKEN:
+        logger.error("❌ Не задан HF_TOKEN")
+        raise ValueError("Missing HF_TOKEN")
+    
+    logger.info("✅ Все переменные настроены, запускаем бота...")
+    
+    # Создаём приложение (совместимо с v21.6+)
     app = Application.builder().token(TG_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Запуск webhook для Render
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
