@@ -2,21 +2,19 @@ import os
 import sys
 import asyncio
 import logging
+from datetime import datetime
+
+# Настройка логирования с временем
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    force=True,
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 print("🚀 BOT STARTED", flush=True)
-print(f"🐍 Python: {sys.version}", flush=True)
 
-# === ФИКС ДЛЯ PYTHON 3.14+ ===
-# Явно создаём event loop, иначе get_event_loop() выбросит ошибку
-if sys.version_info >= (3, 14):
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-# ============================
-
-# Проверка переменных
 tg = os.getenv('TG_BOT_TOKEN')
 hf = os.getenv('HF_TOKEN')
 webhook = os.getenv('WEBHOOK_URL')
@@ -28,9 +26,6 @@ if not all([tg, hf, webhook]):
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from huggingface_hub import InferenceClient
-
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s', force=True)
-logger = logging.getLogger(__name__)
 
 TG_TOKEN = tg
 WEBHOOK_URL = webhook
@@ -44,50 +39,52 @@ SYSTEM = (
     "законы (ФЗ о рекламе, 152-ФЗ), платежи (СБП, ЮKassa). Отвечай кратко и по делу."
 )
 
-async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("👋 Привет! Спрашивай про маркетинг в РФ.")
-
-async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.chat.send_action("typing")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"📩 ПОЛУЧЕН /start от пользователя {update.effective_user.id}")
     try:
+        await update.message.reply_text("👋 Привет! Спрашивай про маркетинг в РФ.")
+        logger.info("✅ Ответ на /start отправлен")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при ответе на /start: {e}")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+    logger.info(f"📩 ПОЛУЧЕНО сообщение от {user_id}: '{text}'")
+    
+    try:
+        await update.message.chat.send_action("typing")
+        logger.info("📝 Отправил действие 'typing'")
+        
         resp = await asyncio.to_thread(
             hf_client.chat,
-            messages=[{"role":"system","content":SYSTEM},{"role":"user","content":u.message.text}],
-            model=HF_MODEL, max_tokens=1024, temperature=0.7, timeout=30
+            messages=[{"role":"system","content":SYSTEM},{"role":"user","content":text}],
+            model=HF_MODEL, max_tokens=512, temperature=0.7, timeout=25
         )
-        await u.message.reply_text(resp.choices[0].message.content)
+        reply = resp.choices[0].message.content
+        await update.message.reply_text(reply)
+        logger.info("✅ Ответ отправлен")
     except Exception as e:
-        logger.error(f"Error: {e}")
-        await u.message.reply_text("⚠️ Ошибка. Попробуйте позже.")
+        logger.error(f"❌ Ошибка при обработке: {type(e).__name__}: {e}")
+        await update.message.reply_text("⚠️ Ошибка. Попробуйте позже.")
 
 def main():
-    print("⚙️ Создаю приложение...", flush=True)
+    logger.info("⚙️ Создаю приложение...")
     app = Application.builder().token(TG_TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    logger.info("✅ CommandHandler('start') добавлен")
     
-    print(f"🔗 Запускаю webhook: {WEBHOOK_URL}/webhook", flush=True)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    logger.info("✅ MessageHandler добавлен")
     
-    # === ФИКС: запускаем run_webhook внутри существующего loop ===
-    if sys.version_info >= (3, 14):
-        # Для Python 3.14+ запускаем асинхронно внутри существующего цикла
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(app.initialize())
-        loop.run_until_complete(app.updater.start_webhook(
-            listen="0.0.0.0",
-            port=int(os.getenv("PORT", 8000)),
-            url_path="webhook",
-            webhook_url=f"{WEBHOOK_URL}/webhook",
-        ))
-        loop.run_forever()
-    else:
-        # Для старых версий — обычный запуск
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.getenv("PORT", 8000)),
-            url_path="webhook",
-            webhook_url=f"{WEBHOOK_URL}/webhook"
-        )
+    logger.info(f"🔗 Запускаю webhook: {WEBHOOK_URL}/webhook")
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.getenv("PORT", 8000)),
+        url_path="webhook",
+        webhook_url=f"{WEBHOOK_URL}/webhook"
+    )
 
 if __name__ == "__main__":
     main()
