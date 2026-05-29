@@ -1,23 +1,26 @@
-# === ОТЛАДКА: простые принты, которые точно появятся в логе ===
-print("🚀 bot.py STARTED")
-print(f"🔍 TG_TOKEN: {'✅' if __import__('os').environ.get('TG_BOT_TOKEN') else '❌ MISSING'}")
-print(f"🔍 HF_TOKEN: {'✅' if __import__('os').environ.get('HF_TOKEN') else '❌ MISSING'}")
-print(f"🔍 WEBHOOK_URL: {'✅' if __import__('os').environ.get('WEBHOOK_URL') else '❌ MISSING'}")
-# =============================================================
-
 import os
+import sys
+
+# === ОТЛАДКА: вывод с немедленной отправкой в логи ===
+print("🚀 BOT STARTED", flush=True)
+print(f"🔍 TG_TOKEN: {'✅' if os.getenv('TG_BOT_TOKEN') else '❌'}", flush=True)
+print(f"🔍 HF_TOKEN: {'✅' if os.getenv('HF_TOKEN') else '❌'}", flush=True)
+print(f"🔍 WEBHOOK_URL: {'✅' if os.getenv('WEBHOOK_URL') else '❌'}", flush=True)
+print(f"🐍 Python: {sys.version}", flush=True)
+
+# Проверка переменных
+if not all([os.getenv('TG_BOT_TOKEN'), os.getenv('HF_TOKEN'), os.getenv('WEBHOOK_URL')]):
+    print("💥 MISSING ENV VARS — проверьте Render!", flush=True)
+    sys.exit(1)
+
+# === Основной код ===
 import logging
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from huggingface_hub import InferenceClient
 
-# Настройка логирования
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-    force=True  # гарантируем, что логи пойдут в консоль
-)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s', force=True)
 logger = logging.getLogger(__name__)
 
 TG_TOKEN = os.getenv("TG_BOT_TOKEN")
@@ -25,70 +28,36 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 HF_TOKEN = os.getenv("HF_TOKEN")
 HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 
-hf_client = InferenceClient(token=HF_TOKEN)
+hf = InferenceClient(token=HF_TOKEN)
 
-SYSTEM_PROMPT = (
-    "Ты — senior-эксперт по маркетингу в России. "
-    "Отвечай профессионально, учитывая локальную специфику: "
-    "российские площадки (VK, Telegram Ads, Яндекс.Директ, Ozon, Wildberries, Avito), "
-    "законодательство (ФЗ «О рекламе», маркировка рекламы, 152-ФЗ), "
-    "платёжные системы (СБП, ЮKassa). "
-    "Используй данные 2024-2025 гг. Если информации нет — говори честно. "
-    "Отвечай структурированно, кратко, используй списки."
+SYSTEM = (
+    "Ты — эксперт по маркетингу в России. Учитывай: российские площадки (VK, Telegram, Яндекс, Ozon, WB), "
+    "законы (ФЗ о рекламе, 152-ФЗ), платежи (СБП, ЮKassa). Отвечай кратко и по делу."
 )
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Привет! Я бот-эксперт по маркетингу в РФ.\n"
-        "Спрашивай о трендах, рекламе, маркетплейсах или законах."
-    )
+async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text("👋 Привет! Спрашивай про маркетинг в РФ.")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.chat.send_action("typing")
-    user_text = update.message.text
-    logger.info(f"Получено: {user_text}")
-
+async def handle(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    await u.message.chat.send_action("typing")
     try:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text}
-        ]
-        response = await asyncio.to_thread(
-            hf_client.chat,
-            messages=messages,
-            model=HF_MODEL,
-            max_tokens=1024,
-            temperature=0.7,
-            timeout=30
+        resp = await asyncio.to_thread(
+            hf.chat,
+            messages=[{"role":"system","content":SYSTEM},{"role":"user","content":u.message.text}],
+            model=HF_MODEL, max_tokens=1024, temperature=0.7, timeout=30
         )
-        bot_reply = response.choices[0].message.content
-        await update.message.reply_text(bot_reply)
+        await u.message.reply_text(resp.choices[0].message.content)
     except Exception as e:
         logger.error(f"Error: {e}")
-        await update.message.reply_text("⚠️ Ошибка. Попробуйте позже.")
+        await u.message.reply_text("⚠️ Ошибка. Попробуйте позже.")
 
 def main():
-    try:
-        print("✅ ПЕРЕД созданием Application")
-        app = Application.builder().token(TG_TOKEN).build()
-        print("✅ ПОСЛЕ создания Application")
-        
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-        print(f"🔗 Запуск webhook на порту {os.getenv('PORT', 8000)}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.getenv("PORT", 8000)),
-            url_path="webhook",
-            webhook_url=f"{WEBHOOK_URL}/webhook"
-        )
-    except Exception as e:
-        print(f"💥 КРИТИЧЕСКАЯ ОШИБКА в main(): {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+    print("⚙️ Создаю приложение...", flush=True)
+    app = Application.builder().token(TG_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    print(f"🔗 Запускаю webhook: {WEBHOOK_URL}/webhook", flush=True)
+    app.run_webhook(listen="0.0.0.0", port=int(os.getenv("PORT",8000)), url_path="webhook", webhook_url=f"{WEBHOOK_URL}/webhook")
 
 if __name__ == "__main__":
-    print("🎯 Вход в __main__")
     main()
