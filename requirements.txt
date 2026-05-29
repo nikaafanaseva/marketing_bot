@@ -1,2 +1,2 @@
-python-telegram-bot[webhooks]>=21.0,<22.0
+python-telegram-bot[webhooks]==21.11.1
 huggingface_hub==0.24.0
