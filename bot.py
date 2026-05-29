@@ -5,23 +5,19 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from huggingface_hub import InferenceClient
 
-# Настройка логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# --- Конфигурация ---
 TG_TOKEN = os.getenv("TG_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://ваш-проект.onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 HF_TOKEN = os.getenv("HF_TOKEN")
 HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 
-# Клиент HF
 hf_client = InferenceClient(token=HF_TOKEN)
 
-# Системный промпт: задает роль эксперта по РФ-маркетингу
 SYSTEM_PROMPT = (
     "Ты — senior-эксперт по маркетингу в России. "
     "Отвечай профессионально, учитывая локальную специфику: "
@@ -40,7 +36,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Показываем статус "печатает..."
     await update.message.chat.send_action("typing")
     user_text = update.message.text
     logger.info(f"Получено: {user_text}")
@@ -50,25 +45,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_text}
         ]
-        # Вызов API в отдельном потоке, чтобы не блокировать бота
         response = await asyncio.to_thread(
             hf_client.chat,
             messages=messages,
             model=HF_MODEL,
             max_tokens=1024,
             temperature=0.7,
-            timeout=25
+            timeout=30
         )
         bot_reply = response.choices[0].message.content
         await update.message.reply_text(bot_reply)
         
     except Exception as e:
         logger.error(f"Error: {e}")
-        # Обработка частой ошибки "модель загружается" на бесплатном тарифе
-        if "Model is currently loading" in str(e):
-             await update.message.reply_text("⏳ Модель просыпается (это занимает ~30 сек). Попробуйте повторить запрос через минуту.")
+        if "Model is currently loading" in str(e) or "503" in str(e):
+            await update.message.reply_text("⏳ Модель просыпается (бесплатный тариф). Попробуйте повторить запрос через 40-60 секунд.")
         else:
-             await update.message.reply_text("⚠️ Ошибка соединения с нейросетью. Попробуйте позже.")
+            await update.message.reply_text("⚠️ Ошибка соединения. Попробуйте позже.")
 
 def main():
     if not all([TG_TOKEN, WEBHOOK_URL, HF_TOKEN]):
@@ -78,7 +71,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запуск webhook для Render
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
